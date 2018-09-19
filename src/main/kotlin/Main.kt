@@ -3,10 +3,12 @@ import kotlinx.html.js.onEndedFunction
 import me.theghostin.nimble.app
 import me.theghostin.nimble.html
 import org.w3c.dom.HTMLAudioElement
+import kotlin.browser.window
 
 data class Model(
-        val station_url: String = "/pirate-radio/station",
-        val station: Station = Station()
+        val station_url: String = "/pirate-radio/station/",
+        val station: Station = Station(),
+        val songs: List<String> = listOf()
 )
 
 data class Station(
@@ -27,26 +29,26 @@ data class Station(
 // )
 
 sealed class Msg
+data class Songs(val songs: List<String>?) : Msg()
 
 fun main(args: Array<String>) {
     app<Msg, Model>(Model()) {
-        // fetch and display station data
-        // window.fetch("${model.station}/meta.json").then { it.text() }
-        //         .then { json -> JSON.parse<Station>(json).apply {
-        //             // TODO: send(station)
+        window.fetch("${model.station_url}${model.station.songs_url}/audio/").then { it.text() }
+                .then {
+                    // the endpoint returns html linking to the files, we're gonna scrape the file names from that.
+                    // find anything that starts with > and ends with .wav. (that's the link text)
+                    // map that to a list and remove the >
+                    send(Songs(Regex(">(.+).wav").findAll(it)
+                            .map { it.value.substring(1) }.toList()))
+                }
 
-        //             // fetch and play song + display song data
-        //             window.fetch("$songs/playlist.json").then {it.text() }
-        //                     .then { json -> JSON.parse<Station>(json).apply {
-        //                         // TODO: send(playlist)
-        //                     } }
-        //        } }
+        inbox { when (it) {
+            is Songs -> model.copy(songs = it.songs ?: listOf())
+        } }
+
         html {
             img(src = "${model.station_url}${model.station.artwork}") {}
-            radio(listOf(
-                    "mansion.wav",
-                    "somewhere.wav"
-            ).map {
+            radio(model.songs.map {
                 "${model.station_url}${model.station.songs_url}/audio/$it"
             })
             h1 { +model.station.title }
@@ -56,6 +58,7 @@ fun main(args: Array<String>) {
 }
 
 fun DIV.radio(songs: List<String>) {
+    if (songs.isEmpty()) return
     var i = 0
     audio {
         src = songs[i]

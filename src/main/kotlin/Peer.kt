@@ -1,9 +1,11 @@
+package me.theghostin.peerjs
+
 // Web API
 external interface MediaStream
 external interface RTCDataChannel
 external interface RTCPeerConnection
 
-// Peer.js
+// Pirate.js
 interface PeerOptions {
     val key: String?
     val host: String?

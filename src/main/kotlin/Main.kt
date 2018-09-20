@@ -1,6 +1,5 @@
 import kotlinx.html.*
 import kotlinx.html.js.onEndedFunction
-import me.theghostin.nimble.Nimble
 import me.theghostin.nimble.app
 import me.theghostin.nimble.html
 import org.w3c.dom.HTMLAudioElement
@@ -9,9 +8,9 @@ import kotlin.js.Math
 import kotlin.js.Promise
 
 data class Model(
-        val station_url: String = "/pirate-radio/station",
         val station: Station = Station(),
-        val connection: ConnectionState = ConnectionState.offline
+        val songs: Map<String, Song> = mapOf(),
+        val me: Pirate = Pirate()
 )
 
 enum class ConnectionState {
@@ -23,11 +22,27 @@ enum class ConnectionState {
     error
 }
 
+data class Pirate(
+        val station_url: String = "/pirate-radio/station",
+        // this is kind of a hack on top of the PeerJS servers, trying not to build our own signaling server.
+        // basically if we _can't_ connect as this id then we should connect normally and then `call` this
+        // peer to bootstrap orchestration.
+        val id: String = "$station_url#host-1",
+        val captain: Pirate? = null,
+        val crew: List<Pirate> = listOf(),
+        val connection: ConnectionState = ConnectionState.offline,
+
+        // if the captain leaves
+        // the new captain is chosen and mates reorganize accordingly.
+        // The new captain will need this to start the stream
+        // back to where it died, approximately
+        val cache: Pair<String, Int>? = null
+)
+
 data class Station(
         val title: String = "Pirate Radio",
         val summary: String = "radio for <i>pirates<i>",
-        val artwork: String? =  "https://media.giphy.com/media/LUIvcbR6yytz2/giphy.gif",
-        val songs: Map<String, Song> = mapOf()
+        val artwork: String? =  "https://media.giphy.com/media/LUIvcbR6yytz2/giphy.gif"
 )
 
 data class Song(
@@ -43,38 +58,33 @@ sealed class Msg
 object NoOp : Msg()
 data class SongsUpdate(val songs: Map<String, Song>) : Msg()
 data class StationUpdate(val station: Station) : Msg()
-data class ConnectionUpdate(val connection: ConnectionState) : Msg()
+data class MeUpdate(val me: Pirate) : Msg()
 
 fun main(args: Array<String>) {
     app<Msg, Model>(Model()) {
         inbox { when (it) {
             NoOp -> model
-            is SongsUpdate -> model.copy(
-                station = model.station.copy(songs = it.songs)
-            )
+            is SongsUpdate -> model.copy(songs = it.songs)
             is StationUpdate -> model.copy(
                 station = model.station.copy(
                         title = it.station.title,
                         summary = it.station.summary,
-                        artwork = it.station.artwork,
-                        // TODO: make sure this merges and doesn't throw errors on same keys.
-                        songs = model.station.songs.plus(it.station.songs)
+                        artwork = it.station.artwork
                 )
             )
-            is ConnectionUpdate -> model.copy(connection = it.connection).also {
-                send(pirate_radio(it))
-            }
+            is MeUpdate -> model.copy(me = it.me) // lol, it me
+                    .also { send(it.me.radio()) }
         } }
 
-        send(pirate_radio())
+        send(model.me.radio())
 
         html {
             console.log("update", model)
             img(src = model.station.artwork) {}
 
-            when (model.connection) {
+            when (model.me.connection) {
                 ConnectionState.streaming -> {
-                    stream(model.station.songs)
+                    stream(model.songs)
                     h1 { +model.station.title }
                     p { unsafe { +model.station.summary } }
                 }
@@ -85,7 +95,7 @@ fun main(args: Array<String>) {
     }
 }
 
-fun Nimble<Msg, Model>.pirate_radio(override: Model? = null): Promise<Msg> = (override ?: model).run {
+fun Pirate.radio(override: Pirate? = null): Promise<Msg> = (override ?: this).run {
     when (connection) {
         ConnectionState.streaming -> {
             /*
@@ -97,10 +107,10 @@ fun Nimble<Msg, Model>.pirate_radio(override: Model? = null): Promise<Msg> = (ov
                             "$station_url/songs/$filename" to Song()
                         }.toMap()
                     }
-                    .then { SongsUpdate(it) }
-                    .catch { ConnectionUpdate(ConnectionState.error) }
+                    .then { SongsUpdate(it.toMap()) }
+                    .catch { MeUpdate(copy(connection = ConnectionState.error)) }
         }
-        ConnectionState.offline -> Promise.resolve(ConnectionUpdate(ConnectionState.streaming))
+        ConnectionState.offline -> Promise.resolve(MeUpdate(copy(connection = ConnectionState.streaming)))
         else -> Promise.resolve(NoOp)
     }
 }

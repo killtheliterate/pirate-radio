@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.frontend.KotlinFrontendExtension
 import org.jetbrains.kotlin.gradle.frontend.npm.NpmExtension
 import org.jetbrains.kotlin.gradle.frontend.webpack.WebPackExtension
 import org.jetbrains.kotlin.gradle.tasks.Kotlin2JsCompile
+import org.jetbrains.kotlinx.serialization.compiler.extensions.SerializationJsExtension
 
 group = "me.theghostin"
 version = "1.0-SNAPSHOT"
@@ -15,9 +16,12 @@ plugins {
 buildscript {
     repositories {
         maven("https://dl.bintray.com/kotlin/kotlin-eap")
+        maven("https://kotlin.bintray.com/kotlinx")
+
     }
     dependencies {
         classpath("org.jetbrains.kotlin:kotlin-frontend-plugin:0.0.37")
+        classpath("org.jetbrains.kotlinx:kotlinx-gradle-serialization-plugin:0.6.1")
     }
 }
 apply<FrontendPlugin>()
@@ -49,6 +53,7 @@ configure<NpmExtension> {
     dependency("nanomorph")
 
     devDependency("html-webpack-plugin")
+    devDependency("html-webpack-include-assets-plugin")
 }
 
 tasks {

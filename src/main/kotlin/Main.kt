@@ -43,6 +43,7 @@ fun main(args: Array<String>) {
                         title = it.station.title,
                         summary = it.station.summary,
                         artwork = it.station.artwork,
+                        // TODO: make sure this merges and doesn't throw errors on same keys.
                         songs = model.station.songs.plus(it.station.songs)
                 )
             )
@@ -56,6 +57,7 @@ fun main(args: Array<String>) {
             radio(model.station.songs)
             h1 { +model.station.title }
             p { unsafe { +model.station.summary } }
+
         }
     }
 }
@@ -87,6 +89,7 @@ fun DIV.radio(songs: Map<String, Song>) {
     if (songs.isEmpty()) return
     var i = (0 until songs.size).random
     audio {
+        id = "pirate-radio"
         src = songs.keys.toList()[i]
         autoPlay = true
         onEndedFunction = {

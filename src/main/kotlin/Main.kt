@@ -6,11 +6,22 @@ import me.theghostin.nimble.html
 import org.w3c.dom.HTMLAudioElement
 import kotlin.browser.window
 import kotlin.js.Math
+import kotlin.js.Promise
 
 data class Model(
         val station_url: String = "/pirate-radio/station",
-        val station: Station = Station()
+        val station: Station = Station(),
+        val connection: ConnectionState = ConnectionState.offline
 )
+
+enum class ConnectionState {
+    // renders audio tag and streams it via RTC, effectively hosting
+    streaming,
+    // listening to a stream via RTC from one of the hosts
+    listening,
+    offline,
+    error
+}
 
 data class Station(
         val title: String = "Pirate Radio",
@@ -29,12 +40,15 @@ data class Song(
 )
 
 sealed class Msg
+object NoOp : Msg()
 data class SongsUpdate(val songs: Map<String, Song>) : Msg()
 data class StationUpdate(val station: Station) : Msg()
+data class ConnectionUpdate(val connection: ConnectionState) : Msg()
 
 fun main(args: Array<String>) {
     app<Msg, Model>(Model()) {
         inbox { when (it) {
+            NoOp -> model
             is SongsUpdate -> model.copy(
                 station = model.station.copy(songs = it.songs)
             )
@@ -47,49 +61,55 @@ fun main(args: Array<String>) {
                         songs = model.station.songs.plus(it.station.songs)
                 )
             )
+            is ConnectionUpdate -> model.copy(connection = it.connection).also {
+                send(pirate_radio(it))
+            }
         } }
 
-        station(model.station_url)
+        send(pirate_radio())
 
         html {
-            console.log(model)
+            console.log("update", model)
             img(src = model.station.artwork) {}
-            radio(model.station.songs)
-            h1 { +model.station.title }
-            p { unsafe { +model.station.summary } }
 
+            when (model.connection) {
+                ConnectionState.streaming -> {
+                    stream(model.station.songs)
+                    h1 { +model.station.title }
+                    p { unsafe { +model.station.summary } }
+                }
+                ConnectionState.offline -> b { "offline" }
+                else -> b { +"unhandled connection state" }
+            }
         }
     }
 }
 
-fun Nimble<Msg, Model>.station(url: String) {
-    /*
-     * audio
-     */
-    window.fetch("$url/songs").then { it.text() }
-            .then { html ->
-                html.files("(mp3|wav)").map { filename ->
-                    "$url/songs/$filename" to Song()
-                }.toMap()
-            }
-            .then { send(SongsUpdate(it)) }
-            .catch { e -> console.log(e) }
-
-    /*
-     * meta data
-     */
-    // window.fetch("$url/pirate-radio.json").then { it.text() }
-    //         // TODO: I think switching to kotlinx will make this work but idk
-    //         .then { JSON.parse<Station>(it) }
-    //         .then { send(StationUpdate(it)) }
-    //         .catch { e -> console.log(e) }
+fun Nimble<Msg, Model>.pirate_radio(override: Model? = null): Promise<Msg> = (override ?: model).run {
+    when (connection) {
+        ConnectionState.streaming -> {
+            /*
+             * audio
+             */
+            window.fetch("$station_url/songs").then { it.text() }
+                    .then { html ->
+                        html.files("(mp3|wav)").map { filename ->
+                            "$station_url/songs/$filename" to Song()
+                        }.toMap()
+                    }
+                    .then { SongsUpdate(it) }
+                    .catch { ConnectionUpdate(ConnectionState.error) }
+        }
+        ConnectionState.offline -> Promise.resolve(ConnectionUpdate(ConnectionState.streaming))
+        else -> Promise.resolve(NoOp)
+    }
 }
 
-fun DIV.radio(songs: Map<String, Song>) {
+fun DIV.stream(songs: Map<String, Song>) {
     if (songs.isEmpty()) return
     var i = (0 until songs.size).random
     audio {
-        id = "pirate-radio"
+        id = "pirate-stream"
         src = songs.keys.toList()[i]
         autoPlay = true
         onEndedFunction = {

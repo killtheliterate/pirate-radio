@@ -37,7 +37,7 @@ dependencies {
     compile("org.jetbrains.kotlinx:kotlinx-html-js:0.6.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-js:0.24.0")
     compile("br.danfma.kodando:kodando-history:0.5.0")
-    compile("me.theghostin:me.theghostin.nimble:1.0.1")
+    compile("me.theghostin:nimble:1.0.2")
 }
 
 configure<KotlinFrontendExtension> {

@@ -1,22 +1,29 @@
+import me.theghostin.peerjs.DataConnection
 import kotlin.browser.window
 import kotlin.js.Promise
 
 data class Pirate(
         val station_url: String = "/pirate-radio/station",
+        val id: String? = null,
+        val crew: Map<String, DataConnection?> = mapOf(),
+
         // this is kind of a hack on top of the PeerJS servers, trying not to build our own signaling server.
         // basically if we _can't_ connect as this id then we should connect normally and then `call` this
         // peer to bootstrap orchestration.
-        val id: String = "$station_url#host-1",
-        val captain: Pirate? = null,
-        val crew: List<Pirate> = listOf(),
-        val connection: ConnectionState = ConnectionState.offline,
+        var captain: String = "${station_url.replace("/", "")}-host1",
+        // if the captain leaves a new captain is chosen and mates reorganize accordingly.
+        // the new captain will need the song URL and current time in ms to reboot the stream.
+        var cache: Pair<String, Int>? = null
+) {
+    val connection: ConnectionState get() = when {
+        id.isNullOrEmpty() -> ConnectionState.offline
+        captain == id -> ConnectionState.streaming
+        captain != id -> ConnectionState.listening
 
-        // if the captain leaves
-        // the new captain is chosen and mates reorganize accordingly.
-        // The new captain will need this to start the stream
-        // back to where it died, approximately
-        val cache: Pair<String, Int>? = null
-)
+        // I don't think this should be possible given the above cases
+        else -> ConnectionState.error
+    }
+}
 
 data class Station(
         val title: String = "Pirate Radio",
@@ -45,10 +52,10 @@ fun Pirate.radio(): Promise<Msg> =
                                 "$station_url/songs/$filename" to Song()
                             }.toMap()
                         }
-                        .then { SongsUpdate(it.toMap()) }
-                        .catch { MeUpdate(copy(connection = ConnectionState.error)) }
+                        .then { SongsUpdate(it) }
+                        .catch { MeUpdate(copy(id = null)) }
             }
-            ConnectionState.offline -> Promise.resolve(MeUpdate(copy(connection = ConnectionState.streaming)))
+            ConnectionState.offline -> Promise.resolve(MeUpdate(copy(id = null)))
             else -> Promise.resolve(NoOp)
         }
 

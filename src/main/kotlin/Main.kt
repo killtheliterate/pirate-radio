@@ -2,8 +2,10 @@ import kotlinx.html.*
 import kotlinx.html.js.onEndedFunction
 import me.theghostin.nimble.app
 import me.theghostin.nimble.html
+import me.theghostin.peerjs.*
 import org.w3c.dom.HTMLAudioElement
 import kotlin.js.Math
+import kotlin.js.Promise
 
 data class Model(
         val station: Station = Station(),
@@ -22,21 +24,25 @@ fun main(args: Array<String>) {
         inbox { when (it) {
             NoOp -> model
             is SongsUpdate -> model.copy(songs = it.songs)
-            is StationUpdate -> model.copy(
-                station = model.station.copy(
-                        title = it.station.title,
-                        summary = it.station.summary,
-                        artwork = it.station.artwork
-                )
-            )
-            is MeUpdate -> model.copy(me = it.me) // lol, it me
-                    .also { send(it.me.radio()) }
+            is StationUpdate -> model.copy(station = it.station)
+            is MeUpdate -> model.copy(me = it.me)
         } }
 
-        send(model.me.radio())
+        peer(model.me.captain) { model.me.copy(id = id, crew = connections).apply {
+            when (connection) {
+                ConnectionState.streaming -> connection {
+                    data { console.log(it) }
+                    error { console.log(it) }
+                }
+                ConnectionState.listening -> connect(captain).apply {
+                    data { console.log(it) }
+                    error { console.log(it) }
+                    open { send("hello") }
+                }
+            }
+        }.let{ send(MeUpdate(it)) } }
 
         html {
-            console.log("update", model)
             img(src = model.station.artwork) {}
 
             when (model.me.connection) {
@@ -44,13 +50,35 @@ fun main(args: Array<String>) {
                     stream(model.songs)
                     h1 { +model.station.title }
                     p { unsafe { +model.station.summary } }
+                    b { +"streaming" }
                 }
-                ConnectionState.offline -> b { "offline" }
-                else -> b { +"unhandled connection state" }
+                ConnectionState.offline -> b { +"offline" }
+                ConnectionState.listening -> b { +"listening" }
+           }
+       }
+    }
+}
+
+
+// TODO: we might wanna round robin a few different captain IDs probably just by enumerating a number at the end
+fun peer(host: String, block: Peer.() -> Unit) = Promise<Peer> { resolve, reject ->
+    Peer(id = host).apply {
+        open { resolve(this) }
+        error {
+            when (it) {
+                PeerError.unavailable_id -> Peer().apply {
+                    open { resolve(this) }
+                    error {
+                        reject(Error(it.name))
+                    }
+                }
+                else -> {
+                    reject(Error(it.name))
+                }
             }
         }
     }
-}
+}.then { it.apply(block) }.catch { throw it }
 
 fun DIV.stream(songs: Map<String, Song>) {
     if (songs.isEmpty()) return
